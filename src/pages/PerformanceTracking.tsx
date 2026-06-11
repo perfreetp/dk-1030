@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Truck, Package, CheckCircle, AlertTriangle, MapPin, Clock, Plus, Save } from 'lucide-react';
+import { Truck, Package, CheckCircle, AlertTriangle, MapPin, Clock, Plus, Save, FileText, ArrowLeft } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
@@ -12,6 +12,9 @@ export default function PerformanceTracking() {
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
+  const [selectedContract, setSelectedContract] = useState<string | null>(null);
+  const [showContractDetail, setShowContractDetail] = useState(false);
+  const [viewMode, setViewMode] = useState<'orders' | 'contracts'>('orders');
   const [qualityScores, setQualityScores] = useState({
     appearanceScore: 85,
     specScore: 85,
@@ -148,6 +151,28 @@ export default function PerformanceTracking() {
           <p className="text-gray-600 mt-1">发货、物流、到货全流程跟踪</p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('orders')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'orders'
+                  ? 'bg-white text-emerald-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              按订单查看
+            </button>
+            <button
+              onClick={() => setViewMode('contracts')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'contracts'
+                  ? 'bg-white text-emerald-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              按合同查看
+            </button>
+          </div>
           <Badge variant="info">
             {orders.filter((o) => o.status === '运输中').length} 运输中
           </Badge>
@@ -158,9 +183,10 @@ export default function PerformanceTracking() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">订单列表</h2>
+        {viewMode === 'orders' ? (
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">订单列表</h2>
 
             <div className="space-y-4">
               {orders.map((order) => {
@@ -345,16 +371,135 @@ export default function PerformanceTracking() {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">合同列表</h2>
+
+              <div className="space-y-4">
+                {contracts.map((contract) => {
+                  const relatedOrder = orders.find(o => o.contractId === contract.id);
+                  const relatedSettlement = settlements.find(s => s.contractId === contract.id);
+                  const hasIssues = relatedOrder?.issues && relatedOrder.issues.length > 0;
+                  
+                  return (
+                    <div
+                      key={contract.id}
+                      className={`border-2 rounded-xl p-6 cursor-pointer transition-all ${
+                        selectedContract === contract.id
+                          ? 'border-emerald-500 bg-emerald-50'
+                          : 'border-gray-200 hover:border-emerald-300'
+                      }`}
+                      onClick={() => {
+                        setSelectedContract(contract.id);
+                        setShowContractDetail(true);
+                      }}
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-8 h-8 text-blue-600" />
+                          <div>
+                            <h3 className="font-semibold text-gray-900">
+                              {contract.contractNumber}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {contract.supplierName}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant={contract.status === '已签署' ? 'success' : contract.status === '待确认' ? 'warning' : 'info'}>
+                          {contract.status}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">批次</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {contract.batchName}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">合同金额</p>
+                          <p className="text-sm font-bold text-emerald-600">
+                            ¥{contract.totalAmount.toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">交付日期</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {contract.deliveryDate}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">关联订单</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {relatedOrder ? relatedOrder.status : '-'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {(relatedSettlement || hasIssues) && (
+                        <div className="flex items-center gap-3">
+                          {hasIssues && (
+                            <Badge variant="danger" size="sm">
+                              {relatedOrder?.issues.length}条异常
+                            </Badge>
+                          )}
+                          {relatedSettlement && (
+                            <Badge variant={relatedSettlement.status === '已付款' ? 'success' : 'warning'} size="sm">
+                              {relatedSettlement.status}
+                            </Badge>
+                          )}
+                          {relatedSettlement && (relatedSettlement.deductions > 0 || relatedSettlement.replenishment > 0) && (
+                            <span className="text-sm text-orange-600">
+                              {relatedSettlement.deductions > 0 && `扣款¥${relatedSettlement.deductions}`}
+                              {relatedSettlement.deductions > 0 && relatedSettlement.replenishment > 0 && ' / '}
+                              {relatedSettlement.replenishment > 0 && `补货¥${relatedSettlement.replenishment}`}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {contracts.length === 0 && (
+                  <div className="text-center py-12">
+                    <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">暂无合同数据</p>
+                    <Button className="mt-4" onClick={() => navigate('/quotation')}>
+                      去报价比价
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="lg:col-span-1">
           <div className="bg-gray-50 rounded-xl p-6 sticky top-6">
-            <h3 className="font-semibold text-gray-900 mb-4">物流追踪</h3>
+            {viewMode === 'orders' ? (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">物流追踪</h3>
+                  {selectedOrder && (
+                    <button
+                      onClick={() => setSelectedOrder(null)}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      清除选择
+                    </button>
+                  )}
+                </div>
 
-            {selectedOrder ? (
-              (() => {
-                const order = orders.find((o) => o.id === selectedOrder);
-                const orderSettlement = settlements.find(s => s.orderId === order?.id);
-                if (!order) return null;
+                {selectedOrder ? (
+                  (() => {
+                    const order = orders.find((o) => o.id === selectedOrder);
+                    const orderSettlement = settlements.find(s => s.orderId === order?.id);
+                    const relatedContract = contracts.find(c => c.id === order?.contractId);
+                    if (!order) return null;
 
                 return (
                   <div className="space-y-4">
@@ -507,6 +652,189 @@ export default function PerformanceTracking() {
               <p className="text-sm text-gray-500 text-center">
                 点击左侧订单查看物流追踪
               </p>
+            )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">合同详情</h3>
+                  {selectedContract && (
+                    <button
+                      onClick={() => {
+                        setSelectedContract(null);
+                        setShowContractDetail(false);
+                      }}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      清除选择
+                    </button>
+                  )}
+                </div>
+
+                {selectedContract ? (
+                  (() => {
+                    const contract = contracts.find(c => c.id === selectedContract);
+                    if (!contract) return null;
+                    
+                    const relatedOrder = orders.find(o => o.contractId === contract.id);
+                    const relatedSettlement = settlements.find(s => s.contractId === contract.id);
+
+                    return (
+                      <div className="space-y-4">
+                        <div className="bg-white rounded-lg p-4">
+                          <h4 className="text-sm font-medium text-gray-900 mb-3">
+                            合同信息
+                          </h4>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">合同编号</span>
+                              <span className="font-medium">{contract.contractNumber}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">供应商</span>
+                              <span className="font-medium">{contract.supplierName}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">批次</span>
+                              <span className="font-medium">{contract.batchName}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">交付日期</span>
+                              <span className="font-medium">{contract.deliveryDate}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-emerald-50 rounded-lg p-4">
+                          <h4 className="text-sm font-medium text-gray-900 mb-3">
+                            合同金额
+                          </h4>
+                          <p className="text-2xl font-bold text-emerald-600">
+                            ¥{contract.totalAmount.toLocaleString()}
+                          </p>
+                        </div>
+
+                        {relatedOrder && (
+                          <div className="bg-white rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-sm font-medium text-gray-900">发货状态</h4>
+                              <Badge variant={relatedOrder.status === '已完成' ? 'success' : relatedOrder.status === '待发货' ? 'warning' : 'info'} size="sm">
+                                {relatedOrder.status}
+                              </Badge>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">订单号</span>
+                                <span className="font-medium">{relatedOrder.id}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">物流单号</span>
+                                <span className="font-medium">{relatedOrder.logisticsNumber}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">数量</span>
+                                <span className="font-medium">{relatedOrder.quantity}吨</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">预计到货</span>
+                                <span className="font-medium">{relatedOrder.actualDeliveryDate}</span>
+                              </div>
+                            </div>
+                            {relatedOrder.qualityCheck && (
+                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">质检评分</span>
+                                  <span className="font-medium text-emerald-600">
+                                    {relatedOrder.qualityCheck.totalScore.toFixed(1)}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {relatedOrder?.issues && relatedOrder.issues.length > 0 && (
+                          <div className="bg-red-50 rounded-lg p-4">
+                            <h4 className="text-sm font-medium text-red-700 mb-3">
+                              异常记录 ({relatedOrder.issues.length}条)
+                            </h4>
+                            <div className="space-y-2">
+                              {relatedOrder.issues.map((issue) => (
+                                <div key={issue.id} className="text-sm">
+                                  <div className="flex justify-between">
+                                    <span className="text-red-600">{issue.type}</span>
+                                    <span className="font-medium">¥{issue.amount.toLocaleString()}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-1">{issue.description}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {relatedSettlement && (
+                          <div className="bg-orange-50 rounded-lg p-4">
+                            <h4 className="text-sm font-medium text-gray-900 mb-3">
+                              结算明细
+                            </h4>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">合同金额</span>
+                                <span className="font-medium">
+                                  ¥{relatedSettlement.totalAmount.toLocaleString()}
+                                </span>
+                              </div>
+                              {relatedSettlement.deductions > 0 && (
+                                <div className="flex justify-between text-red-600">
+                                  <span>扣款</span>
+                                  <span>-¥{relatedSettlement.deductions.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {relatedSettlement.replenishment > 0 && (
+                                <div className="flex justify-between text-blue-600">
+                                  <span>补货</span>
+                                  <span>+¥{relatedSettlement.replenishment.toLocaleString()}</span>
+                                </div>
+                              )}
+                              <div className="pt-2 border-t border-orange-200 flex justify-between font-bold text-emerald-600">
+                                <span>最终金额</span>
+                                <span>¥{relatedSettlement.finalAmount.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between items-center mt-2">
+                                <span className="text-gray-600">付款状态</span>
+                                <Badge variant={relatedSettlement.status === '已付款' ? 'success' : 'warning'} size="sm">
+                                  {relatedSettlement.status}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {!relatedOrder && contract.status === '待确认' && (
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <p className="text-sm text-gray-500 text-center">
+                              签署合同后将自动创建订单
+                            </p>
+                          </div>
+                        )}
+
+                        <Button
+                          className="w-full"
+                          variant="outline"
+                          icon={FileText}
+                          onClick={() => navigate('/contract')}
+                        >
+                          查看合同详情
+                        </Button>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="text-sm text-gray-500 text-center">
+                    点击左侧合同查看详情
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>

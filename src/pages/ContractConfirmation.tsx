@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { FileCheck, Search, Clock, CheckCircle, Download, Send, AlertCircle } from 'lucide-react';
+import { FileCheck, Search, Clock, CheckCircle, Download, Send, AlertCircle, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
 
 export default function ContractConfirmation() {
-  const { contracts, updateContract } = useStore();
+  const navigate = useNavigate();
+  const { contracts, orders, updateContract, updateOrder } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [selectedContract, setSelectedContract] = useState<string | null>(null);
@@ -28,10 +30,22 @@ export default function ContractConfirmation() {
 
   const handleSign = (contractId: string) => {
     if (window.confirm('确认签署此合同？签署后将无法撤回。')) {
+      const contract = contracts.find(c => c.id === contractId);
+      
       updateContract(contractId, {
         status: '已签署',
         signedAt: new Date().toISOString().split('T')[0]
       });
+
+      if (contract) {
+        const relatedOrder = orders.find(o => o.contractId === contractId);
+        if (relatedOrder) {
+          updateOrder(relatedOrder.id, { status: '待发货' });
+          alert(`合同签署成功！\n已关联订单: ${relatedOrder.id}\n订单状态已更新为待发货，可前往履约跟踪查看`);
+        } else {
+          alert('合同签署成功！');
+        }
+      }
     }
   };
 
@@ -254,6 +268,8 @@ export default function ContractConfirmation() {
                     (c) => c.id === selectedContract
                   );
                   if (!contract) return null;
+                  
+                  const relatedOrder = orders.find(o => o.contractId === contract.id);
 
                   return (
                     <div className="space-y-4">
@@ -277,6 +293,43 @@ export default function ContractConfirmation() {
                           {contract.supplierName}
                         </p>
                       </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">合同金额</p>
+                        <p className="text-lg font-bold text-emerald-600">
+                          ¥{contract.totalAmount.toLocaleString()}
+                        </p>
+                      </div>
+
+                      {relatedOrder && (
+                        <div className="bg-blue-50 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-blue-700 font-medium">关联订单</span>
+                            <Badge variant={relatedOrder.status === '待发货' ? 'warning' : relatedOrder.status === '已完成' ? 'success' : 'info'} size="sm">
+                              {relatedOrder.status}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-blue-600">订单号: {relatedOrder.id}</p>
+                          <p className="text-xs text-blue-600">物流: {relatedOrder.logisticsNumber}</p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            icon={ExternalLink}
+                            className="w-full mt-2"
+                            onClick={() => navigate('/performance')}
+                          >
+                            去履约跟踪
+                          </Button>
+                        </div>
+                      )}
+
+                      {!relatedOrder && contract.status === '待确认' && (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-xs text-gray-500 text-center">
+                            签署合同后将自动创建订单
+                          </p>
+                        </div>
+                      )}
 
                       <div className="pt-4 border-t border-gray-200">
                         <h4 className="text-sm font-medium text-gray-900 mb-3">

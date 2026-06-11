@@ -8,7 +8,7 @@ import { Quotation } from '../data/types';
 
 export default function QuotationComparison() {
   const navigate = useNavigate();
-  const { batches, suppliers, quotations, addQuotation, addContract, updateBatch } = useStore();
+  const { batches, suppliers, quotations, addQuotation, addContract, addOrder, updateBatch } = useStore();
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [roundFilter, setRoundFilter] = useState<number | 'all'>('all');
   const [showQuoteModal, setShowQuoteModal] = useState(false);
@@ -26,6 +26,7 @@ export default function QuotationComparison() {
 
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
   const batchQuantity = selectedBatch?.quantity || 0;
+  const batchUnit = selectedBatch?.unit || '吨';
 
   const batchQuotations = selectedBatchId
     ? quotations.filter((q) => q.batchId === selectedBatchId)
@@ -93,6 +94,10 @@ export default function QuotationComparison() {
     setSelectedQuoteId(quoteId);
   };
 
+  const getQuoteTotalPrice = (unitPrice: number, freight: number) => {
+    return unitPrice * batchQuantity + freight;
+  };
+
   const handleConfirmWinner = () => {
     setShowConfirmModal(true);
   };
@@ -109,6 +114,8 @@ export default function QuotationComparison() {
     const batch = batches.find(b => b.id === selectedBatchId);
     if (!batch) return;
 
+    const contractTotalPrice = getQuoteTotalPrice(quote.unitPrice, quote.freight);
+
     const newContract = {
       id: `contract-${Date.now()}`,
       contractNumber: `CT-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
@@ -116,7 +123,7 @@ export default function QuotationComparison() {
       batchName: batch.name,
       supplierId: quote.supplierId,
       supplierName: quote.supplierName,
-      totalAmount: quote.totalPrice,
+      totalAmount: contractTotalPrice,
       deliveryDate: batch.deliveryDate,
       paymentTerms: '预付30%，到货付70%',
       status: '待确认' as const,
@@ -126,10 +133,25 @@ export default function QuotationComparison() {
 
     addContract(newContract);
     updateBatch(selectedBatchId, { status: '已截止' });
+
+    const newOrder = {
+      id: `order-${Date.now()}`,
+      contractId: newContract.id,
+      batchId: selectedBatchId,
+      supplierId: quote.supplierId,
+      supplierName: quote.supplierName,
+      quantity: batchQuantity,
+      logisticsNumber: `LOG-${String(Date.now()).slice(-8)}`,
+      status: '待发货' as const,
+      actualDeliveryDate: batch.deliveryDate,
+      qualityCheck: null,
+      issues: []
+    };
+    addOrder(newOrder);
     
     setShowConfirmModal(false);
     setSelectedQuoteId(null);
-    alert(`已为 ${quote.supplierName} 生成待确认合同！\n合同金额: ¥${quote.totalPrice.toLocaleString()}\n交付日期: ${batch.deliveryDate}`);
+    alert(`已为 ${quote.supplierName} 生成待确认合同！\n合同金额: ¥${contractTotalPrice.toLocaleString()}\n含税单价: ¥${quote.unitPrice.toLocaleString()}/${batchUnit}\n运费: ¥${quote.freight.toLocaleString()}\n数量: ${batchQuantity}${batchUnit}\n交付日期: ${batch.deliveryDate}\n已自动创建待发货订单`);
     navigate('/contract');
   };
 
@@ -140,7 +162,7 @@ export default function QuotationComparison() {
           <h1 className="text-2xl font-bold text-gray-900">报价比价</h1>
           <p className="text-gray-600 mt-1">
             多轮竞价，含税含运价格自动汇总 
-            {selectedBatch && <span className="text-emerald-600">（当前批次数量: {batchQuantity}吨）</span>}
+            {selectedBatch && <span className="text-emerald-600">（当前批次: {batchQuantity}{batchUnit}）</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -175,7 +197,7 @@ export default function QuotationComparison() {
                     {batch.name}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {batch.batchNumber} · {batch.quantity}吨
+                    {batch.batchNumber} · {batch.quantity}{batch.unit || '吨'}
                   </p>
                 </button>
               ))}
@@ -234,11 +256,11 @@ export default function QuotationComparison() {
                       </p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <p className="text-blue-100 text-sm">含税单价</p>
                       <p className="text-xl font-bold">
-                        ¥{selectedQuote.unitPrice.toLocaleString()}/吨
+                        ¥{selectedQuote.unitPrice.toLocaleString()}/{batchUnit}
                       </p>
                     </div>
                     <div>
@@ -248,9 +270,15 @@ export default function QuotationComparison() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-blue-100 text-sm">含税含运总价({batchQuantity}吨)</p>
+                      <p className="text-blue-100 text-sm">数量</p>
                       <p className="text-xl font-bold">
-                        ¥{selectedQuote.totalPrice.toLocaleString()}
+                        {batchQuantity}{batchUnit}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-blue-100 text-sm">含税含运总价</p>
+                      <p className="text-xl font-bold">
+                        ¥{getQuoteTotalPrice(selectedQuote.unitPrice, selectedQuote.freight).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -268,11 +296,11 @@ export default function QuotationComparison() {
                       </p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <p className="text-emerald-100 text-sm">含税单价</p>
                       <p className="text-xl font-bold">
-                        ¥{lowestPrice.unitPrice.toLocaleString()}/吨
+                        ¥{lowestPrice.unitPrice.toLocaleString()}/{batchUnit}
                       </p>
                     </div>
                     <div>
@@ -282,9 +310,15 @@ export default function QuotationComparison() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-emerald-100 text-sm">含税含运总价({batchQuantity}吨)</p>
+                      <p className="text-emerald-100 text-sm">数量</p>
                       <p className="text-xl font-bold">
-                        ¥{lowestPrice.totalPrice.toLocaleString()}
+                        {batchQuantity}{batchUnit}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-emerald-100 text-sm">含税含运总价</p>
+                      <p className="text-xl font-bold">
+                        ¥{getQuoteTotalPrice(lowestPrice.unitPrice, lowestPrice.freight).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -318,7 +352,7 @@ export default function QuotationComparison() {
                           运费
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                          含税含运总价({batchQuantity}吨)
+                          含税含运总价({batchQuantity}{batchUnit})
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                           轮次
@@ -326,7 +360,9 @@ export default function QuotationComparison() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {sortedQuotations.map((quote, index) => (
+                      {sortedQuotations.map((quote, index) => {
+                        const calculatedTotal = getQuoteTotalPrice(quote.unitPrice, quote.freight);
+                        return (
                         <tr
                           key={quote.id}
                           className={`hover:bg-gray-50 cursor-pointer transition-all ${
@@ -376,7 +412,7 @@ export default function QuotationComparison() {
                             <div className="flex items-center gap-2">
                               <DollarSign className="w-4 h-4 text-gray-400" />
                               <span className="text-gray-900">
-                                ¥{quote.unitPrice.toLocaleString()}/吨
+                                ¥{quote.unitPrice.toLocaleString()}/{batchUnit}
                               </span>
                             </div>
                           </td>
@@ -384,9 +420,14 @@ export default function QuotationComparison() {
                             ¥{quote.freight.toLocaleString()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <p className="font-bold text-gray-900">
-                              ¥{quote.totalPrice.toLocaleString()}
-                            </p>
+                            <div>
+                              <p className="font-bold text-gray-900">
+                                ¥{calculatedTotal.toLocaleString()}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                ({batchQuantity}{batchUnit}×¥{quote.unitPrice}+运费)
+                              </p>
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge variant="info" size="sm">
@@ -394,7 +435,8 @@ export default function QuotationComparison() {
                             </Badge>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
 
@@ -505,7 +547,7 @@ export default function QuotationComparison() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  含税单价（元/吨）
+                  含税单价（元/{batchUnit}）
                 </label>
                 <input
                   type="number"
@@ -532,11 +574,14 @@ export default function QuotationComparison() {
               {quoteForm.unitPrice > 0 && (
                 <div className="bg-emerald-50 rounded-lg p-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-700">含税含运总价（{batchQuantity}吨）:</span>
+                    <span className="text-gray-700">含税含运总价（{batchQuantity}{batchUnit}）:</span>
                     <span className="text-2xl font-bold text-emerald-600">
                       ¥{(quoteForm.unitPrice * batchQuantity + quoteForm.freight).toLocaleString()}
                     </span>
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    计算: {batchQuantity}{batchUnit} × ¥{quoteForm.unitPrice} + ¥{quoteForm.freight}
+                  </p>
                 </div>
               )}
             </div>
@@ -577,27 +622,30 @@ export default function QuotationComparison() {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-gray-600">含税单价:</span>
-                      <span className="ml-2 font-medium">¥{selectedQuote.unitPrice}/吨</span>
+                      <span className="ml-2 font-medium">¥{selectedQuote.unitPrice}/{batchUnit}</span>
                     </div>
                     <div>
                       <span className="text-gray-600">运费:</span>
-                      <span className="ml-2 font-medium">¥{selectedQuote.freight}</span>
+                      <span className="ml-2 font-medium">¥{selectedQuote.freight.toLocaleString()}</span>
                     </div>
                     <div>
-                      <span className="text-gray-600">批次数量:</span>
-                      <span className="ml-2 font-medium">{batchQuantity}吨</span>
+                      <span className="text-gray-600">数量:</span>
+                      <span className="ml-2 font-medium">{batchQuantity}{batchUnit}</span>
                     </div>
-                    <div className="col-span-2">
+                    <div>
                       <span className="text-gray-600">含税含运总价:</span>
                       <span className="ml-2 font-bold text-blue-600">
-                        ¥{selectedQuote.totalPrice.toLocaleString()}
+                        ¥{getQuoteTotalPrice(selectedQuote.unitPrice, selectedQuote.freight).toLocaleString()}
                       </span>
                     </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-blue-200 text-xs text-gray-600">
+                    计算公式: {batchQuantity}{batchUnit} × ¥{selectedQuote.unitPrice} + ¥{selectedQuote.freight} = ¥{getQuoteTotalPrice(selectedQuote.unitPrice, selectedQuote.freight).toLocaleString()}
                   </div>
                 </div>
 
                 <p className="text-sm text-gray-600 mb-4">
-                  确认后将为此供应商生成待确认合同，并结束本次竞价。
+                  确认后将为此供应商生成待确认合同，并自动创建待发货订单。
                 </p>
               </>
             ) : (

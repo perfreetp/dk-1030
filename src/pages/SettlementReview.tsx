@@ -6,27 +6,41 @@ import Button from '../components/common/Button';
 import { statisticsData } from '../data/mockData';
 
 export default function SettlementReview() {
-  const { settlements, suppliers, updateSettlement } = useStore();
+  const { settlements, suppliers, contracts, batches, updateSettlement } = useStore();
   const [timeRange, setTimeRange] = useState('month');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [batchFilter, setBatchFilter] = useState<string>('全部');
+  const [supplierFilter, setSupplierFilter] = useState<string>('全部');
   const [editForm, setEditForm] = useState({
     deductions: 0,
     replenishment: 0,
     status: '待付款' as '待付款' | '已付款'
   });
 
-  const paidSettlements = settlements.filter((s) => s.status === '已付款');
-  const pendingSettlements = settlements.filter((s) => s.status === '待付款');
+  const uniqueSuppliers = Array.from(new Set(settlements.map(s => s.supplierName)));
+  const uniqueBatchNames = Array.from(new Set(contracts.map(c => c.batchName)));
+
+  const filteredSettlements = settlements.filter((settlement) => {
+    const contract = contracts.find(c => c.id === settlement.contractId);
+    const matchesSupplier = supplierFilter === '全部' || settlement.supplierName === supplierFilter;
+    const matchesBatch = batchFilter === '全部' || (contract && contract.batchName === batchFilter);
+    return matchesSupplier && matchesBatch;
+  });
+
+  const paidSettlements = filteredSettlements.filter((s) => s.status === '已付款');
+  const pendingSettlements = filteredSettlements.filter((s) => s.status === '待付款');
 
   const totalPaid = paidSettlements.reduce((sum, s) => sum + s.finalAmount, 0);
   const totalPending = pendingSettlements.reduce((sum, s) => sum + s.finalAmount, 0);
-  const totalDeductions = settlements.reduce((sum, s) => sum + s.deductions, 0);
-  const totalReplenishment = settlements.reduce((sum, s) => sum + s.replenishment, 0);
+  const totalDeductions = filteredSettlements.reduce((sum, s) => sum + s.deductions, 0);
+  const totalReplenishment = filteredSettlements.reduce((sum, s) => sum + s.replenishment, 0);
 
-  const supplierSettlementData = suppliers
+  const filteredSupplierData = suppliers
     .filter((s) => s.status === '已通过')
     .map(supplier => {
-      const supplierSettlements = settlements.filter(s => s.supplierName === supplier.companyName);
+      const supplierSettlements = filteredSettlements.filter(s => s.supplierName === supplier.companyName);
+      if (supplierSettlements.length === 0) return null;
+      
       const totalAmount = supplierSettlements.reduce((sum, s) => sum + s.totalAmount, 0);
       const totalDeduction = supplierSettlements.reduce((sum, s) => sum + s.deductions, 0);
       const totalReplenishmentAmount = supplierSettlements.reduce((sum, s) => sum + s.replenishment, 0);
@@ -52,7 +66,8 @@ export default function SettlementReview() {
         performanceScore: Math.max(0, Math.min(100, performanceScore))
       };
     })
-    .sort((a, b) => b.performanceScore - a.performanceScore);
+    .filter(Boolean)
+    .sort((a, b) => b!.performanceScore - a!.performanceScore);
 
   const handleEdit = (settlement: any) => {
     setEditingId(settlement.id);
@@ -102,9 +117,79 @@ export default function SettlementReview() {
             <option value="quarter">本季度</option>
             <option value="year">本年</option>
           </select>
-          <Button icon={Download} variant="outline">
+          <Button icon={Download} variant="outline" onClick={() => {
+            const reportData = filteredSettlements.map(s => ({
+              '供应商': s.supplierName,
+              '合同金额': s.totalAmount,
+              '扣款': s.deductions,
+              '补货': s.replenishment,
+              '最终金额': s.finalAmount,
+              '付款状态': s.status
+            }));
+            
+            const headers = ['供应商', '合同金额', '扣款', '补货', '最终金额', '付款状态'];
+            const csvContent = [
+              headers.join(','),
+              ...reportData.map(row => Object.values(row).join(','))
+            ].join('\n');
+            
+            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `结算报表_${batchFilter === '全部' ? '全部批次' : batchFilter}_${supplierFilter === '全部' ? '全部供应商' : supplierFilter}_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }}>
             导出报表
           </Button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">按批次:</span>
+            <select
+              value={batchFilter}
+              onChange={(e) => setBatchFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+            >
+              <option value="全部">全部批次</option>
+              {uniqueBatchNames.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">按供应商:</span>
+            <select
+              value={supplierFilter}
+              onChange={(e) => setSupplierFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+            >
+              <option value="全部">全部供应商</option>
+              {uniqueSuppliers.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          {(batchFilter !== '全部' || supplierFilter !== '全部') && (
+            <button
+              onClick={() => {
+                setBatchFilter('全部');
+                setSupplierFilter('全部');
+              }}
+              className="text-sm text-emerald-600 hover:text-emerald-700"
+            >
+              清除筛选
+            </button>
+          )}
+          <span className="text-sm text-gray-500 ml-auto">
+            共 {filteredSettlements.length} 条结算记录
+          </span>
         </div>
       </div>
 
@@ -201,7 +286,7 @@ export default function SettlementReview() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {settlements.map((settlement) => (
+                  {filteredSettlements.map((settlement) => (
                     <tr key={settlement.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">
                         {settlement.supplierName}
@@ -300,10 +385,10 @@ export default function SettlementReview() {
                 </tbody>
               </table>
 
-              {settlements.length === 0 && (
+              {filteredSettlements.length === 0 && (
                 <div className="text-center py-12">
                   <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500">暂无结算数据</p>
+                  <p className="text-gray-500">暂无符合条件的结算数据</p>
                 </div>
               )}
             </div>
@@ -317,85 +402,92 @@ export default function SettlementReview() {
                 <Award className="w-5 h-5 text-orange-600" />
                 供应商排名
               </h2>
-              <Badge variant="info" size="sm">
-                按结算表现
+              <Badge variant={batchFilter !== '全部' || supplierFilter !== '全部' ? 'warning' : 'info'} size="sm">
+                {batchFilter !== '全部' || supplierFilter !== '全部' ? '已筛选' : '按结算表现'}
               </Badge>
             </div>
 
             <div className="space-y-4">
-              {supplierSettlementData.map((supplier, index) => (
-                <div
-                  key={supplier.id}
-                  className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-start gap-3 mb-3">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                        index === 0
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : index === 1
-                          ? 'bg-gray-200 text-gray-700'
-                          : index === 2
-                          ? 'bg-orange-100 text-orange-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {index + 1}
+              {filteredSupplierData.length > 0 ? (
+                filteredSupplierData.map((supplier, index) => supplier && (
+                  <div key={supplier.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                          index === 0
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : index === 1
+                            ? 'bg-gray-200 text-gray-700'
+                            : index === 2
+                            ? 'bg-orange-100 text-orange-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {index + 1}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">
+                          {supplier.companyName}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {supplier.contactPerson}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-emerald-600">
+                          {supplier.performanceScore.toFixed(1)}
+                        </p>
+                        <p className="text-xs text-gray-500">综合评分</p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">
-                        {supplier.companyName}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {supplier.contactPerson}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-emerald-600">
-                        {supplier.performanceScore.toFixed(1)}
-                      </p>
-                      <p className="text-xs text-gray-500">综合评分</p>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">信用分:</span>
+                        <span className="font-medium">{supplier.creditScore}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">付款率:</span>
+                        <span className={`font-medium ${supplier.paymentRate >= 80 ? 'text-emerald-600' : supplier.paymentRate >= 50 ? 'text-orange-600' : 'text-red-600'}`}>
+                          {supplier.paymentRate.toFixed(0)}%
+                        </span>
+                      </div>
+                      {supplier.totalDeduction > 0 && (
+                        <div className="flex justify-between text-red-600 col-span-2">
+                          <span>累计扣款:</span>
+                          <span>-¥{supplier.totalDeduction.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {supplier.unpaidCount > 0 && (
+                        <div className="flex justify-between text-orange-600 col-span-2">
+                          <span>待付款:</span>
+                          <span>¥{supplier.finalAmount.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {supplier.paidCount > 0 && (
+                        <div className="flex justify-between text-emerald-600 col-span-2">
+                          <span>已付款:</span>
+                          <span>¥{supplier.finalAmount.toLocaleString()}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">信用分:</span>
-                      <span className="font-medium">{supplier.creditScore}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">付款率:</span>
-                      <span className={`font-medium ${supplier.paymentRate >= 80 ? 'text-emerald-600' : supplier.paymentRate >= 50 ? 'text-orange-600' : 'text-red-600'}`}>
-                        {supplier.paymentRate.toFixed(0)}%
-                      </span>
-                    </div>
-                    {supplier.totalDeduction > 0 && (
-                      <div className="flex justify-between text-red-600 col-span-2">
-                        <span>累计扣款:</span>
-                        <span>-¥{supplier.totalDeduction.toLocaleString()}</span>
-                      </div>
-                    )}
-                    {supplier.unpaidCount > 0 && (
-                      <div className="flex justify-between text-orange-600 col-span-2">
-                        <span>待付款:</span>
-                        <span>¥{supplier.finalAmount.toLocaleString()}</span>
-                      </div>
-                    )}
-                    {supplier.paidCount > 0 && (
-                      <div className="flex justify-between text-emerald-600 col-span-2">
-                        <span>已付款:</span>
-                        <span>¥{supplier.finalAmount.toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Award className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">暂无符合条件的供应商</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
           <div className="bg-white rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               核心指标
+              <Badge variant="info" size="sm">
+                筛选后
+              </Badge>
             </h2>
 
             <div className="space-y-4">
