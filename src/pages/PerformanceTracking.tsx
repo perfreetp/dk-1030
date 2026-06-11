@@ -8,7 +8,7 @@ import { QualityCheck, Issue } from '../data/types';
 
 export default function PerformanceTracking() {
   const navigate = useNavigate();
-  const { orders, contracts, updateOrder, addSettlement } = useStore();
+  const { orders, contracts, settlements, updateOrder, updateSettlement, addSettlement } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
@@ -70,11 +70,6 @@ export default function PerformanceTracking() {
       qualityCheck
     });
 
-    const order = orders.find(o => o.id === selectedOrder);
-    if (order && qualityPassed) {
-      handleUpdateStatus(selectedOrder, '质检中');
-    }
-
     setShowQualityModal(false);
   };
 
@@ -96,21 +91,44 @@ export default function PerformanceTracking() {
     const updatedIssues = [...order.issues, newIssue];
     updateOrder(selectedOrder, { issues: updatedIssues });
 
-    if (issueForm.amount > 0) {
+    const existingSettlement = settlements.find(s => s.orderId === order.id);
+    
+    if (existingSettlement) {
+      const newDeductions = issueForm.type === '破损' || issueForm.type === '质量不符' 
+        ? existingSettlement.deductions + issueForm.amount 
+        : existingSettlement.deductions;
+      const newReplenishment = issueForm.type === '延迟' 
+        ? existingSettlement.replenishment + issueForm.amount 
+        : existingSettlement.replenishment;
+      const newFinalAmount = existingSettlement.totalAmount - newDeductions + newReplenishment;
+      
+      updateSettlement(existingSettlement.id, {
+        deductions: newDeductions,
+        replenishment: newReplenishment,
+        finalAmount: newFinalAmount
+      });
+      
+      alert(`已更新结算记录！\n扣款: ¥${newDeductions.toLocaleString()}\n补货: ¥${newReplenishment.toLocaleString()}\n最终金额: ¥${newFinalAmount.toLocaleString()}`);
+    } else {
       const contract = contracts.find(c => c.id === order.contractId);
       if (contract) {
+        const deductions = issueForm.type === '破损' || issueForm.type === '质量不符' ? issueForm.amount : 0;
+        const replenishment = issueForm.type === '延迟' ? issueForm.amount : 0;
+        
         addSettlement({
           id: `settle-${Date.now()}`,
           contractId: order.contractId,
           orderId: order.id,
           supplierName: order.supplierName,
           totalAmount: contract.totalAmount,
-          deductions: issueForm.type === '破损' || issueForm.type === '质量不符' ? issueForm.amount : 0,
-          replenishment: issueForm.type === '延迟' ? issueForm.amount : 0,
-          finalAmount: contract.totalAmount - (issueForm.type === '破损' || issueForm.type === '质量不符' ? issueForm.amount : 0) + (issueForm.type === '延迟' ? issueForm.amount : 0),
+          deductions,
+          replenishment,
+          finalAmount: contract.totalAmount - deductions + replenishment,
           status: '待付款',
           paidAt: ''
         });
+        
+        alert(`已创建结算记录！\n扣款: ¥${deductions.toLocaleString()}\n补货: ¥${replenishment.toLocaleString()}`);
       }
     }
 
@@ -120,8 +138,6 @@ export default function PerformanceTracking() {
       description: '',
       amount: 0
     });
-
-    alert('异常已记录，相关结算信息已流转至结算复盘页面');
   };
 
   return (
@@ -147,153 +163,178 @@ export default function PerformanceTracking() {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">订单列表</h2>
 
             <div className="space-y-4">
-              {orders.map((order) => (
-                <div
-                  key={order.id}
-                  className={`border-2 rounded-xl p-6 cursor-pointer transition-all ${
-                    selectedOrder === order.id
-                      ? 'border-emerald-500 bg-emerald-50'
-                      : 'border-gray-200 hover:border-emerald-300'
-                  }`}
-                  onClick={() => setSelectedOrder(order.id)}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      {statusIcons[order.status]}
+              {orders.map((order) => {
+                const orderSettlement = settlements.find(s => s.orderId === order.id);
+                const hasIssues = order.issues && order.issues.length > 0;
+                
+                return (
+                  <div
+                    key={order.id}
+                    className={`border-2 rounded-xl p-6 cursor-pointer transition-all ${
+                      selectedOrder === order.id
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : 'border-gray-200 hover:border-emerald-300'
+                    }`}
+                    onClick={() => setSelectedOrder(order.id)}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        {statusIcons[order.status]}
+                        <div>
+                          <h3 className="font-semibold text-gray-900">
+                            {order.supplierName}
+                          </h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            订单号: {order.id}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant={statusColors[order.status]}>
+                        {order.status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                       <div>
-                        <h3 className="font-semibold text-gray-900">
-                          {order.supplierName}
-                        </h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                          订单号: {order.id}
+                        <p className="text-xs text-gray-500 mb-1">数量</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {order.quantity}吨
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">物流单号</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {order.logisticsNumber}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">预计到货</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {order.actualDeliveryDate}
                         </p>
                       </div>
                     </div>
-                    <Badge variant={statusColors[order.status]}>
-                      {order.status}
-                    </Badge>
-                  </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">数量</p>
-                      <p className="text-sm font-medium text-gray-900">
-                        {order.quantity}吨
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">物流单号</p>
-                      <p className="text-sm font-medium text-gray-900">
-                        {order.logisticsNumber}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">预计到货</p>
-                      <p className="text-sm font-medium text-gray-900">
-                        {order.actualDeliveryDate}
-                      </p>
-                    </div>
-                  </div>
-
-                  {order.qualityCheck && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-gray-700">
-                          质检评分: {order.qualityCheck.totalScore.toFixed(1)}
-                        </span>
-                        <Badge variant={order.qualityCheck.passed ? 'success' : 'danger'} size="sm">
-                          {order.qualityCheck.passed ? '合格' : '不合格'}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-
-                  {order.issues.length > 0 && (
-                    <div className="mb-4 p-3 bg-red-50 rounded-lg">
-                      <p className="text-sm font-medium text-red-700 mb-2">
-                        异常记录: {order.issues.length}条
-                      </p>
-                      {order.issues.map((issue) => (
-                        <div key={issue.id} className="text-sm text-red-600">
-                          {issue.type} - ¥{issue.amount}
+                    {order.qualityCheck && (
+                      <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-700">
+                            质检评分: {order.qualityCheck.totalScore.toFixed(1)}
+                          </span>
+                          <Badge variant={order.qualityCheck.passed ? 'success' : 'danger'} size="sm">
+                            {order.qualityCheck.passed ? '合格' : '不合格'}
+                          </Badge>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="pt-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <MapPin className="w-4 h-4" />
-                        <span>物流轨迹追踪中</span>
                       </div>
+                    )}
 
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          icon={AlertTriangle}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedOrder(order.id);
-                            setShowIssueModal(true);
-                          }}
-                        >
-                          异常处理
-                        </Button>
-                        {order.status === '待发货' && (
+                    {orderSettlement && (orderSettlement.deductions > 0 || orderSettlement.replenishment > 0) && (
+                      <div className="mb-4 p-3 bg-orange-50 rounded-lg">
+                        <p className="text-sm font-medium text-orange-700 mb-2">结算信息</p>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          {orderSettlement.deductions > 0 && (
+                            <div className="text-red-600">
+                              扣款: -¥{orderSettlement.deductions.toLocaleString()}
+                            </div>
+                          )}
+                          {orderSettlement.replenishment > 0 && (
+                            <div className="text-blue-600">
+                              补货: +¥{orderSettlement.replenishment.toLocaleString()}
+                            </div>
+                          )}
+                          <div className="col-span-2 font-medium text-gray-900">
+                            最终金额: ¥{orderSettlement.finalAmount.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {hasIssues && (
+                      <div className="mb-4 p-3 bg-red-50 rounded-lg">
+                        <p className="text-sm font-medium text-red-700 mb-2">
+                          异常记录: {order.issues.length}条
+                        </p>
+                        {order.issues.map((issue) => (
+                          <div key={issue.id} className="text-sm text-red-600">
+                            {issue.type} - ¥{issue.amount.toLocaleString()} ({issue.description})
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="pt-4 border-t border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <MapPin className="w-4 h-4" />
+                          <span>物流轨迹追踪中</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
                           <Button
                             size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateStatus(order.id, '运输中');
-                            }}
-                          >
-                            确认发货
-                          </Button>
-                        )}
-                        {order.status === '运输中' && (
-                          <Button
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateStatus(order.id, '已到货');
-                            }}
-                          >
-                            确认到货
-                          </Button>
-                        )}
-                        {order.status === '已到货' && (
-                          <Button
-                            size="sm"
-                            icon={CheckCircle}
+                            variant="outline"
+                            icon={AlertTriangle}
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedOrder(order.id);
-                              setShowQualityModal(true);
+                              setShowIssueModal(true);
                             }}
                           >
-                            质检登记
+                            异常处理
                           </Button>
-                        )}
-                        {order.status === '质检中' && (
-                          <Button
-                            size="sm"
-                            variant="success"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateStatus(order.id, '已完成');
-                              navigate('/settlement');
-                            }}
-                          >
-                            完成质检
-                          </Button>
-                        )}
+                          {order.status === '待发货' && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatus(order.id, '运输中');
+                              }}
+                            >
+                              确认发货
+                            </Button>
+                          )}
+                          {order.status === '运输中' && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatus(order.id, '已到货');
+                              }}
+                            >
+                              确认到货
+                            </Button>
+                          )}
+                          {order.status === '已到货' && (
+                            <Button
+                              size="sm"
+                              icon={CheckCircle}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedOrder(order.id);
+                                setShowQualityModal(true);
+                              }}
+                            >
+                              质检登记
+                            </Button>
+                          )}
+                          {order.status === '质检中' && (
+                            <Button
+                              size="sm"
+                              variant="success"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateStatus(order.id, '已完成');
+                              }}
+                            >
+                              完成质检
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {orders.length === 0 && (
                 <div className="text-center py-12">
@@ -312,6 +353,7 @@ export default function PerformanceTracking() {
             {selectedOrder ? (
               (() => {
                 const order = orders.find((o) => o.id === selectedOrder);
+                const orderSettlement = settlements.find(s => s.orderId === order?.id);
                 if (!order) return null;
 
                 return (
@@ -386,6 +428,38 @@ export default function PerformanceTracking() {
                         ))}
                       </div>
                     </div>
+
+                    {orderSettlement && (orderSettlement.deductions > 0 || orderSettlement.replenishment > 0) && (
+                      <div className="bg-white rounded-lg p-4">
+                        <h4 className="text-sm font-medium text-gray-900 mb-3">
+                          结算明细
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">合同金额</span>
+                            <span className="font-medium">
+                              ¥{orderSettlement.totalAmount.toLocaleString()}
+                            </span>
+                          </div>
+                          {orderSettlement.deductions > 0 && (
+                            <div className="flex justify-between text-red-600">
+                              <span>扣款</span>
+                              <span>-¥{orderSettlement.deductions.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {orderSettlement.replenishment > 0 && (
+                            <div className="flex justify-between text-blue-600">
+                              <span>补货</span>
+                              <span>+¥{orderSettlement.replenishment.toLocaleString()}</span>
+                            </div>
+                          )}
+                          <div className="pt-2 border-t border-gray-200 flex justify-between font-bold text-emerald-600">
+                            <span>最终金额</span>
+                            <span>¥{orderSettlement.finalAmount.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {order.qualityCheck && (
                       <div className="bg-white rounded-lg p-4">
@@ -593,9 +667,9 @@ export default function PerformanceTracking() {
 
               <div className="bg-orange-50 rounded-lg p-4 text-sm">
                 <p className="text-orange-800">
-                  {issueForm.type === '破损' && '破损问题将从结算金额中扣除相应款项'}
-                  {issueForm.type === '延迟' && '延迟交付将产生相应赔偿金额'}
-                  {issueForm.type === '质量不符' && '质量不符将产生扣款，可能需要补货'}
+                  {issueForm.type === '破损' && '破损问题将从结算金额中扣除相应款项，将更新现有结算记录'}
+                  {issueForm.type === '延迟' && '延迟交付将产生相应赔偿金额（补货），将更新现有结算记录'}
+                  {issueForm.type === '质量不符' && '质量不符将产生扣款，将更新现有结算记录'}
                 </p>
               </div>
             </div>

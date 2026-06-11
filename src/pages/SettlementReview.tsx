@@ -23,10 +23,36 @@ export default function SettlementReview() {
   const totalDeductions = settlements.reduce((sum, s) => sum + s.deductions, 0);
   const totalReplenishment = settlements.reduce((sum, s) => sum + s.replenishment, 0);
 
-  const supplierRankings = suppliers
+  const supplierSettlementData = suppliers
     .filter((s) => s.status === '已通过')
-    .sort((a, b) => b.creditScore - a.creditScore)
-    .slice(0, 5);
+    .map(supplier => {
+      const supplierSettlements = settlements.filter(s => s.supplierName === supplier.companyName);
+      const totalAmount = supplierSettlements.reduce((sum, s) => sum + s.totalAmount, 0);
+      const totalDeduction = supplierSettlements.reduce((sum, s) => sum + s.deductions, 0);
+      const totalReplenishmentAmount = supplierSettlements.reduce((sum, s) => sum + s.replenishment, 0);
+      const finalAmount = supplierSettlements.reduce((sum, s) => sum + s.finalAmount, 0);
+      const paidCount = supplierSettlements.filter(s => s.status === '已付款').length;
+      const unpaidCount = supplierSettlements.filter(s => s.status === '待付款').length;
+      const paymentRate = supplierSettlements.length > 0 ? (paidCount / supplierSettlements.length) * 100 : 0;
+      const performanceScore = 
+        supplier.creditScore * 0.3 + 
+        (100 - (totalDeduction / (totalAmount || 1)) * 100) * 0.35 +
+        paymentRate * 0.2 +
+        (100 - (totalReplenishmentAmount / (totalAmount || 1)) * 100) * 0.15;
+      
+      return {
+        ...supplier,
+        totalAmount,
+        totalDeduction,
+        totalReplenishment: totalReplenishmentAmount,
+        finalAmount,
+        paidCount,
+        unpaidCount,
+        paymentRate,
+        performanceScore: Math.max(0, Math.min(100, performanceScore))
+      };
+    })
+    .sort((a, b) => b.performanceScore - a.performanceScore);
 
   const handleEdit = (settlement: any) => {
     setEditingId(settlement.id);
@@ -286,43 +312,81 @@ export default function SettlementReview() {
 
         <div className="lg:col-span-1">
           <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Award className="w-5 h-5 text-orange-600" />
-              供应商排名
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Award className="w-5 h-5 text-orange-600" />
+                供应商排名
+              </h2>
+              <Badge variant="info" size="sm">
+                按结算表现
+              </Badge>
+            </div>
 
             <div className="space-y-4">
-              {supplierRankings.map((supplier, index) => (
+              {supplierSettlementData.map((supplier, index) => (
                 <div
                   key={supplier.id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                 >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                      index === 0
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : index === 1
-                        ? 'bg-gray-200 text-gray-700'
-                        : index === 2
-                        ? 'bg-orange-100 text-orange-700'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    {index + 1}
+                  <div className="flex items-start gap-3 mb-3">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                        index === 0
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : index === 1
+                          ? 'bg-gray-200 text-gray-700'
+                          : index === 2
+                          ? 'bg-orange-100 text-orange-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">
+                        {supplier.companyName}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {supplier.contactPerson}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-emerald-600">
+                        {supplier.performanceScore.toFixed(1)}
+                      </p>
+                      <p className="text-xs text-gray-500">综合评分</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">
-                      {supplier.companyName}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {supplier.contactPerson}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-emerald-600">
-                      {supplier.creditScore}
-                    </p>
-                    <p className="text-xs text-gray-500">信用分</p>
+                  
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">信用分:</span>
+                      <span className="font-medium">{supplier.creditScore}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">付款率:</span>
+                      <span className={`font-medium ${supplier.paymentRate >= 80 ? 'text-emerald-600' : supplier.paymentRate >= 50 ? 'text-orange-600' : 'text-red-600'}`}>
+                        {supplier.paymentRate.toFixed(0)}%
+                      </span>
+                    </div>
+                    {supplier.totalDeduction > 0 && (
+                      <div className="flex justify-between text-red-600 col-span-2">
+                        <span>累计扣款:</span>
+                        <span>-¥{supplier.totalDeduction.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {supplier.unpaidCount > 0 && (
+                      <div className="flex justify-between text-orange-600 col-span-2">
+                        <span>待付款:</span>
+                        <span>¥{supplier.finalAmount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {supplier.paidCount > 0 && (
+                      <div className="flex justify-between text-emerald-600 col-span-2">
+                        <span>已付款:</span>
+                        <span>¥{supplier.finalAmount.toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
