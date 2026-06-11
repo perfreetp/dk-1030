@@ -101,11 +101,13 @@ export interface Issue {
 export interface Order {
   id: string;
   contractId: string;
+  batchId?: string;
+  supplierId?: string;
   supplierName: string;
   quantity: number;
   actualDeliveryDate: string;
   logisticsNumber: string;
-  status: '待发货' | '运输中' | '已到货' | '质检中';
+  status: '待签署' | '待发货' | '运输中' | '已到货' | '质检中';
   qualityCheck?: QualityCheck;
   issues: Issue[];
 }

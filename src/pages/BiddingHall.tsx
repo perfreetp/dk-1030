@@ -5,10 +5,13 @@ import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 
 export default function BiddingHall() {
-  const { batches } = useStore();
+  const { batches, suppliers, updateBatch } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitingBatchId, setInvitingBatchId] = useState<string | null>(null);
+  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
 
   const filteredBatches = batches.filter((batch) => {
     const matchesSearch =
@@ -30,13 +33,39 @@ export default function BiddingHall() {
     const batch = batches.find((b) => b.id === batchId);
     if (batch) {
       const newStatus = batch.status === '草稿' ? '招标中' : '竞价中';
-      // In real app, this would update the store
+      updateBatch(batchId, {
+        status: newStatus,
+        updatedAt: new Date().toISOString().split('T')[0]
+      });
       alert(`已将 "${batch.name}" 状态更新为: ${newStatus}`);
     }
   };
 
   const handleInvite = (batchId: string) => {
-    alert('打开供应商邀请对话框');
+    const batch = batches.find((b) => b.id === batchId);
+    if (batch) {
+      setInvitingBatchId(batchId);
+      setSelectedSuppliers(batch.invitedSuppliers || []);
+      setShowInviteModal(true);
+    }
+  };
+
+  const handleSaveInvitations = () => {
+    if (invitingBatchId) {
+      updateBatch(invitingBatchId, {
+        invitedSuppliers: selectedSuppliers,
+        status: '招标中',
+        updatedAt: new Date().toISOString().split('T')[0]
+      });
+      const batch = batches.find(b => b.id === invitingBatchId);
+      alert(`已为 "${batch?.name}" 邀请 ${selectedSuppliers.length} 家供应商`);
+      setShowInviteModal(false);
+    }
+  };
+
+  const getInvitedSupplierCount = (batchId: string) => {
+    const batch = batches.find(b => b.id === batchId);
+    return batch?.invitedSuppliers?.length || 0;
   };
 
   return (
@@ -133,7 +162,7 @@ export default function BiddingHall() {
                     <div className="flex items-center gap-4 text-sm text-gray-600">
                       <div className="flex items-center gap-1">
                         <Users className="w-4 h-4" />
-                        <span>3家供应商报名</span>
+                        <span>{getInvitedSupplierCount(batch.id)}家供应商已邀请</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <Clock className="w-4 h-4" />
@@ -248,6 +277,26 @@ export default function BiddingHall() {
                           </div>
                         </div>
                       </div>
+
+                      <div className="pt-4 border-t border-gray-200">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2">
+                          已邀请供应商
+                        </h4>
+                        {batch.invitedSuppliers && batch.invitedSuppliers.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {batch.invitedSuppliers.map(supplierId => {
+                              const supplier = suppliers.find(s => s.id === supplierId);
+                              return supplier ? (
+                                <span key={supplierId} className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-full">
+                                  {supplier.companyName}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500">暂无已邀请供应商</p>
+                        )}
+                      </div>
                     </div>
                   );
                 })()
@@ -260,6 +309,57 @@ export default function BiddingHall() {
           </div>
         </div>
       </div>
+
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              邀请供应商
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              选择要邀请的供应商（可多选）
+            </p>
+
+            <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-4 mb-4">
+              {suppliers.filter(s => s.status === '已通过').map(supplier => (
+                <label
+                  key={supplier.id}
+                  className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedSuppliers.includes(supplier.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedSuppliers([...selectedSuppliers, supplier.id]);
+                      } else {
+                        setSelectedSuppliers(selectedSuppliers.filter(id => id !== supplier.id));
+                      }
+                    }}
+                    className="w-4 h-4 text-emerald-600 rounded"
+                  />
+                  <div>
+                    <p className="font-medium text-gray-900">{supplier.companyName}</p>
+                    <p className="text-xs text-gray-500">{supplier.contactPerson} · {supplier.phone}</p>
+                  </div>
+                </label>
+              ))}
+              {suppliers.filter(s => s.status === '已通过').length === 0 && (
+                <p className="text-center text-gray-500 py-4">暂无可邀请的供应商</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowInviteModal(false)}>
+                取消
+              </Button>
+              <Button onClick={handleSaveInvitations}>
+                确认邀请 ({selectedSuppliers.length})
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

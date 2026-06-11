@@ -305,21 +305,27 @@ export default function ContractConfirmation() {
                         <div className="bg-blue-50 rounded-lg p-3">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-blue-700 font-medium">关联订单</span>
-                            <Badge variant={relatedOrder.status === '待发货' ? 'warning' : relatedOrder.status === '已完成' ? 'success' : 'info'} size="sm">
+                            <Badge variant={relatedOrder.status === '待签署' ? 'default' : relatedOrder.status === '待发货' ? 'warning' : relatedOrder.status === '已完成' ? 'success' : 'info'} size="sm">
                               {relatedOrder.status}
                             </Badge>
                           </div>
                           <p className="text-xs text-blue-600">订单号: {relatedOrder.id}</p>
                           <p className="text-xs text-blue-600">物流: {relatedOrder.logisticsNumber}</p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            icon={ExternalLink}
-                            className="w-full mt-2"
-                            onClick={() => navigate('/performance')}
-                          >
-                            去履约跟踪
-                          </Button>
+                          {relatedOrder.status === '待签署' ? (
+                            <p className="text-xs text-orange-600 mt-2">
+                              等待合同签署后生效
+                            </p>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              icon={ExternalLink}
+                              className="w-full mt-2"
+                              onClick={() => navigate(`/performance?contractId=${contract.id}`)}
+                            >
+                              去履约跟踪
+                            </Button>
+                          )}
                         </div>
                       )}
 

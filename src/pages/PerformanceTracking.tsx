@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Truck, Package, CheckCircle, AlertTriangle, MapPin, Clock, Plus, Save, FileText, ArrowLeft } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
@@ -8,6 +8,7 @@ import { QualityCheck, Issue } from '../data/types';
 
 export default function PerformanceTracking() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { orders, contracts, settlements, updateOrder, updateSettlement, addSettlement } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
   const [showQualityModal, setShowQualityModal] = useState(false);
@@ -29,7 +30,17 @@ export default function PerformanceTracking() {
     amount: 0
   });
 
+  useEffect(() => {
+    const contractIdFromUrl = searchParams.get('contractId');
+    if (contractIdFromUrl) {
+      setSelectedContract(contractIdFromUrl);
+      setShowContractDetail(true);
+      setViewMode('contracts');
+    }
+  }, [searchParams]);
+
   const statusIcons: Record<string, React.ReactNode> = {
+    待签署: <Clock className="w-5 h-5 text-gray-400" />,
     待发货: <Package className="w-5 h-5 text-gray-600" />,
     运输中: <Truck className="w-5 h-5 text-blue-600" />,
     已到货: <CheckCircle className="w-5 h-5 text-emerald-600" />,
@@ -37,6 +48,7 @@ export default function PerformanceTracking() {
   };
 
   const statusColors: Record<string, 'default' | 'info' | 'success' | 'warning'> = {
+    待签署: 'default',
     待发货: 'default',
     运输中: 'info',
     已到货: 'success',
@@ -182,6 +194,27 @@ export default function PerformanceTracking() {
         </div>
       </div>
 
+      {selectedContract && showContractDetail && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-blue-600" />
+            <span className="text-sm text-blue-700">
+              正在查看合同: <strong>{contracts.find(c => c.id === selectedContract)?.contractNumber}</strong>
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedContract(null);
+              setShowContractDetail(false);
+              setViewMode('orders');
+            }}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            清除
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {viewMode === 'orders' ? (
           <div className="lg:col-span-2">
@@ -308,6 +341,18 @@ export default function PerformanceTracking() {
                           >
                             异常处理
                           </Button>
+                          {order.status === '待签署' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/contract`);
+                              }}
+                            >
+                              去签署合同
+                            </Button>
+                          )}
                           {order.status === '待发货' && (
                             <Button
                               size="sm"

@@ -37,8 +37,12 @@ export default function QuotationComparison() {
       ? batchQuotations
       : batchQuotations.filter((q) => q.round === roundFilter);
 
+  const getQuoteTotalPrice = (unitPrice: number, freight: number) => {
+    return unitPrice * batchQuantity + freight;
+  };
+
   const sortedQuotations = [...filteredQuotations].sort(
-    (a, b) => a.totalPrice - b.totalPrice
+    (a, b) => getQuoteTotalPrice(a.unitPrice, a.freight) - getQuoteTotalPrice(b.unitPrice, b.freight)
   );
 
   const lowestPrice = sortedQuotations.length > 0 ? sortedQuotations[0] : null;
@@ -52,6 +56,11 @@ export default function QuotationComparison() {
   const invitedSuppliers = suppliers.filter(s => invitedSupplierIds.includes(s.id));
 
   const selectedQuote = quotations.find(q => q.id === selectedQuoteId);
+
+  const handleBatchSelect = (batchId: string) => {
+    setSelectedBatchId(batchId);
+    setSelectedQuoteId(null);
+  };
 
   const handleStartNewRound = () => {
     if (!selectedBatchId) {
@@ -78,7 +87,7 @@ export default function QuotationComparison() {
       supplierName: supplier.companyName,
       unitPrice: quoteForm.unitPrice,
       freight: quoteForm.freight,
-      totalPrice: quoteForm.unitPrice * batchQuantity + quoteForm.freight,
+      totalPrice: getQuoteTotalPrice(quoteForm.unitPrice, quoteForm.freight),
       minOrder: 10,
       validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       round: currentRound + 1,
@@ -92,10 +101,6 @@ export default function QuotationComparison() {
 
   const handleSelectQuote = (quoteId: string) => {
     setSelectedQuoteId(quoteId);
-  };
-
-  const getQuoteTotalPrice = (unitPrice: number, freight: number) => {
-    return unitPrice * batchQuantity + freight;
   };
 
   const handleConfirmWinner = () => {
@@ -142,7 +147,7 @@ export default function QuotationComparison() {
       supplierName: quote.supplierName,
       quantity: batchQuantity,
       logisticsNumber: `LOG-${String(Date.now()).slice(-8)}`,
-      status: '待发货' as const,
+      status: '待签署' as const,
       actualDeliveryDate: batch.deliveryDate,
       qualityCheck: null,
       issues: []
@@ -151,7 +156,7 @@ export default function QuotationComparison() {
     
     setShowConfirmModal(false);
     setSelectedQuoteId(null);
-    alert(`已为 ${quote.supplierName} 生成待确认合同！\n合同金额: ¥${contractTotalPrice.toLocaleString()}\n含税单价: ¥${quote.unitPrice.toLocaleString()}/${batchUnit}\n运费: ¥${quote.freight.toLocaleString()}\n数量: ${batchQuantity}${batchUnit}\n交付日期: ${batch.deliveryDate}\n已自动创建待发货订单`);
+    alert(`已为 ${quote.supplierName} 生成待确认合同！\n合同金额: ¥${contractTotalPrice.toLocaleString()}\n含税单价: ¥${quote.unitPrice.toLocaleString()}/${batchUnit}\n运费: ¥${quote.freight.toLocaleString()}\n数量: ${batchQuantity}${batchUnit}\n交付日期: ${batch.deliveryDate}\n已创建关联订单，待合同签署后生效`);
     navigate('/contract');
   };
 
@@ -183,10 +188,7 @@ export default function QuotationComparison() {
               {activeBatches.map((batch) => (
                 <button
                   key={batch.id}
-                  onClick={() => {
-                    setSelectedBatchId(batch.id);
-                    setSelectedQuoteId(null);
-                  }}
+                  onClick={() => handleBatchSelect(batch.id)}
                   className={`w-full text-left p-3 rounded-lg transition-all ${
                     selectedBatchId === batch.id
                       ? 'bg-emerald-50 border-2 border-emerald-500'
