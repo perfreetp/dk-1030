@@ -11,6 +11,7 @@ export interface ProcurementBatch {
   deliveryLocation: string;
   qualityStandard: string;
   status: '草稿' | '招标中' | '竞价中' | '已截止' | '已完成';
+  invitedSuppliers: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +77,27 @@ export interface Contract {
   signedAt: string;
 }
 
+export interface QualityCheck {
+  id: string;
+  appearanceScore: number;
+  specScore: number;
+  qualityScore: number;
+  tasteScore: number;
+  totalScore: number;
+  passed: boolean;
+  notes: string;
+  checkedAt: string;
+}
+
+export interface Issue {
+  id: string;
+  type: '破损' | '延迟' | '质量不符';
+  description: string;
+  amount: number;
+  status: '待处理' | '已处理';
+  createdAt: string;
+}
+
 export interface Order {
   id: string;
   contractId: string;
@@ -84,14 +106,8 @@ export interface Order {
   actualDeliveryDate: string;
   logisticsNumber: string;
   status: '待发货' | '运输中' | '已到货' | '质检中';
+  qualityCheck?: QualityCheck;
   issues: Issue[];
-}
-
-export interface Issue {
-  id: string;
-  type: '破损' | '延迟' | '质量不符';
-  description: string;
-  createdAt: string;
 }
 
 export interface Settlement {

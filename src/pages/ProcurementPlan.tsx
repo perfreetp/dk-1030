@@ -1,14 +1,17 @@
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Calendar, MapPin } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calendar, MapPin, Send, Users } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import { ProcurementBatch } from '../data/types';
 
 export default function ProcurementPlan() {
-  const { batches, addBatch, updateBatch, deleteBatch } = useStore();
+  const { batches, suppliers, addBatch, updateBatch, deleteBatch } = useStore();
   const [showModal, setShowModal] = useState(false);
   const [editingBatch, setEditingBatch] = useState<ProcurementBatch | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitingBatchId, setInvitingBatchId] = useState<string | null>(null);
+  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     type: '紫皮' as '紫皮' | '白皮',
@@ -37,6 +40,7 @@ export default function ProcurementPlan() {
         ...formData,
         budgetTotal,
         status: '草稿',
+        invitedSuppliers: [],
         createdAt: now,
         updatedAt: now
       };
@@ -78,6 +82,43 @@ export default function ProcurementPlan() {
     }
   };
 
+  const handlePublish = (batchId: string) => {
+    updateBatch(batchId, {
+      status: '招标中',
+      updatedAt: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const handleInviteSuppliers = (batchId: string) => {
+    const batch = batches.find(b => b.id === batchId);
+    if (batch) {
+      setInvitingBatchId(batchId);
+      setSelectedSuppliers(batch.invitedSuppliers);
+      setShowInviteModal(true);
+    }
+  };
+
+  const handleSaveInvitations = () => {
+    if (invitingBatchId) {
+      updateBatch(invitingBatchId, {
+        invitedSuppliers: selectedSuppliers,
+        status: selectedSuppliers.length > 0 ? '招标中' : '招标中',
+        updatedAt: new Date().toISOString().split('T')[0]
+      });
+    }
+    setShowInviteModal(false);
+    setInvitingBatchId(null);
+    setSelectedSuppliers([]);
+  };
+
+  const toggleSupplier = (supplierId: string) => {
+    setSelectedSuppliers(prev => 
+      prev.includes(supplierId)
+        ? prev.filter(id => id !== supplierId)
+        : [...prev, supplierId]
+    );
+  };
+
   const statusColors: Record<string, 'default' | 'success' | 'warning' | 'info' | 'danger'> = {
     草稿: 'default',
     招标中: 'info',
@@ -85,6 +126,8 @@ export default function ProcurementPlan() {
     已截止: 'danger',
     已完成: 'success'
   };
+
+  const approvedSuppliers = suppliers.filter(s => s.status === '已通过');
 
   return (
     <div className="space-y-6">
@@ -114,6 +157,9 @@ export default function ProcurementPlan() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   交付信息
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  已邀请供应商
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   状态
@@ -159,24 +205,61 @@ export default function ProcurementPlan() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm font-medium text-gray-900">
+                        {batch.invitedSuppliers.length}家
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <Badge variant={statusColors[batch.status]}>
                       {batch.status}
                     </Badge>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
+                      {batch.status === '草稿' && (
+                        <>
+                          <button
+                            onClick={() => handleInviteSuppliers(batch.id)}
+                            className="p-1 hover:bg-emerald-50 rounded"
+                            title="邀请供应商"
+                          >
+                            <Users className="w-4 h-4 text-emerald-600" />
+                          </button>
+                          <button
+                            onClick={() => handlePublish(batch.id)}
+                            className="p-1 hover:bg-blue-50 rounded"
+                            title="发布招标"
+                          >
+                            <Send className="w-4 h-4 text-blue-600" />
+                          </button>
+                        </>
+                      )}
+                      {(batch.status === '招标中' || batch.status === '竞价中') && (
+                        <button
+                          onClick={() => handleInviteSuppliers(batch.id)}
+                          className="p-1 hover:bg-emerald-50 rounded"
+                          title="管理供应商"
+                        >
+                          <Users className="w-4 h-4 text-emerald-600" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleEdit(batch)}
                         className="p-1 hover:bg-gray-100 rounded"
                       >
                         <Edit2 className="w-4 h-4 text-gray-600" />
                       </button>
-                      <button
-                        onClick={() => handleDelete(batch.id)}
-                        className="p-1 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </button>
+                      {batch.status === '草稿' && (
+                        <button
+                          onClick={() => handleDelete(batch.id)}
+                          className="p-1 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -351,6 +434,78 @@ export default function ProcurementPlan() {
               </Button>
               <Button onClick={handleSubmit}>
                 {editingBatch ? '保存修改' : '创建批次'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              邀请供应商参与竞价
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              选择要邀请的供应商（已通过的供应商）
+            </p>
+
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {approvedSuppliers.map((supplier) => (
+                <label
+                  key={supplier.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    selectedSuppliers.includes(supplier.id)
+                      ? 'bg-emerald-50 border-2 border-emerald-500'
+                      : 'bg-gray-50 border-2 border-transparent hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedSuppliers.includes(supplier.id)}
+                    onChange={() => toggleSupplier(supplier.id)}
+                    className="w-4 h-4 text-emerald-600"
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">
+                      {supplier.companyName}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {supplier.contactPerson} · {supplier.location}
+                    </p>
+                  </div>
+                  <span className="text-sm font-medium text-emerald-600">
+                    信用分: {supplier.creditScore}
+                  </span>
+                </label>
+              ))}
+
+              {approvedSuppliers.length === 0 && (
+                <p className="text-center text-gray-500 py-8">
+                  暂无已通过的供应商
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600">
+                已选择: <span className="font-medium text-gray-900">{selectedSuppliers.length}</span> 家供应商
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowInviteModal(false);
+                  setInvitingBatchId(null);
+                  setSelectedSuppliers([]);
+                }}
+              >
+                取消
+              </Button>
+              <Button onClick={handleSaveInvitations}>
+                确认邀请 ({selectedSuppliers.length})
               </Button>
             </div>
           </div>

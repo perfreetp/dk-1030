@@ -1,26 +1,62 @@
 import { useState } from 'react';
-import { Calculator, TrendingUp, Clock, Award, DollarSign, Download } from 'lucide-react';
+import { Calculator, TrendingUp, Clock, Award, DollarSign, Download, Edit2, Save } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
 import { statisticsData } from '../data/mockData';
 
 export default function SettlementReview() {
-  const { settlements, suppliers } = useStore();
+  const { settlements, suppliers, updateSettlement } = useStore();
   const [timeRange, setTimeRange] = useState('month');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    deductions: 0,
+    replenishment: 0,
+    status: '待付款' as '待付款' | '已付款'
+  });
 
   const paidSettlements = settlements.filter((s) => s.status === '已付款');
   const pendingSettlements = settlements.filter((s) => s.status === '待付款');
 
   const totalPaid = paidSettlements.reduce((sum, s) => sum + s.finalAmount, 0);
   const totalPending = pendingSettlements.reduce((sum, s) => sum + s.finalAmount, 0);
-  const totalDeductions = paidSettlements.reduce((sum, s) => sum + s.deductions, 0);
-  const totalReplenishment = paidSettlements.reduce((sum, s) => sum + s.replenishment, 0);
+  const totalDeductions = settlements.reduce((sum, s) => sum + s.deductions, 0);
+  const totalReplenishment = settlements.reduce((sum, s) => sum + s.replenishment, 0);
 
   const supplierRankings = suppliers
     .filter((s) => s.status === '已通过')
     .sort((a, b) => b.creditScore - a.creditScore)
     .slice(0, 5);
+
+  const handleEdit = (settlement: any) => {
+    setEditingId(settlement.id);
+    setEditForm({
+      deductions: settlement.deductions,
+      replenishment: settlement.replenishment,
+      status: settlement.status
+    });
+  };
+
+  const handleSave = (settlementId: string) => {
+    const settlement = settlements.find(s => s.id === settlementId);
+    if (!settlement) return;
+
+    const finalAmount = settlement.totalAmount - editForm.deductions + editForm.replenishment;
+    
+    updateSettlement(settlementId, {
+      deductions: editForm.deductions,
+      replenishment: editForm.replenishment,
+      finalAmount,
+      status: editForm.status,
+      paidAt: editForm.status === '已付款' ? new Date().toISOString().split('T')[0] : ''
+    });
+
+    setEditingId(null);
+  };
+
+  const handleCancel = () => {
+    setEditingId(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -95,9 +131,9 @@ export default function SettlementReview() {
               <TrendingUp className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">采购节省率</p>
-              <p className="text-2xl font-bold text-emerald-600">
-                {statisticsData.savingsRate}%
+              <p className="text-sm text-gray-600">总补货</p>
+              <p className="text-2xl font-bold text-gray-900">
+                ¥{totalReplenishment.toLocaleString()}
               </p>
             </div>
           </div>
@@ -133,6 +169,9 @@ export default function SettlementReview() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       状态
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      操作
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -144,29 +183,92 @@ export default function SettlementReview() {
                       <td className="px-4 py-3 text-gray-900">
                         ¥{settlement.totalAmount.toLocaleString()}
                       </td>
-                      <td className="px-4 py-3 text-red-600">
-                        {settlement.deductions > 0
-                          ? `-¥${settlement.deductions.toLocaleString()}`
-                          : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-emerald-600">
-                        {settlement.replenishment > 0
-                          ? `+¥${settlement.replenishment.toLocaleString()}`
-                          : '-'}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-gray-900">
-                        ¥{settlement.finalAmount.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            settlement.status === '已付款' ? 'success' : 'warning'
-                          }
-                          size="sm"
-                        >
-                          {settlement.status}
-                        </Badge>
-                      </td>
+                      {editingId === settlement.id ? (
+                        <>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              value={editForm.deductions}
+                              onChange={(e) => setEditForm({ ...editForm, deductions: parseFloat(e.target.value) || 0 })}
+                              className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              value={editForm.replenishment}
+                              onChange={(e) => setEditForm({ ...editForm, replenishment: parseFloat(e.target.value) || 0 })}
+                              className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-gray-900">
+                            ¥{(settlement.totalAmount - editForm.deductions + editForm.replenishment).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={editForm.status}
+                              onChange={(e) => setEditForm({ ...editForm, status: e.target.value as any })}
+                              className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            >
+                              <option value="待付款">待付款</option>
+                              <option value="已付款">已付款</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleSave(settlement.id)}
+                                className="p-1 hover:bg-emerald-50 rounded"
+                                title="保存"
+                              >
+                                <Save className="w-4 h-4 text-emerald-600" />
+                              </button>
+                              <button
+                                onClick={handleCancel}
+                                className="p-1 hover:bg-gray-100 rounded"
+                                title="取消"
+                              >
+                                <span className="text-gray-600">×</span>
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 text-red-600">
+                            {settlement.deductions > 0
+                              ? `-¥${settlement.deductions.toLocaleString()}`
+                              : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-emerald-600">
+                            {settlement.replenishment > 0
+                              ? `+¥${settlement.replenishment.toLocaleString()}`
+                              : '-'}
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-gray-900">
+                            ¥{settlement.finalAmount.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge
+                              variant={
+                                settlement.status === '已付款' ? 'success' : 'warning'
+                              }
+                              size="sm"
+                            >
+                              {settlement.status}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleEdit(settlement)}
+                              className="p-1 hover:bg-gray-100 rounded"
+                              title="编辑"
+                            >
+                              <Edit2 className="w-4 h-4 text-gray-600" />
+                            </button>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

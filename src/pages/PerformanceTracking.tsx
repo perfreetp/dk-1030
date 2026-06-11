@@ -1,12 +1,30 @@
 import { useState } from 'react';
-import { Truck, Package, CheckCircle, AlertTriangle, MapPin, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Truck, Package, CheckCircle, AlertTriangle, MapPin, Clock, Plus, Save } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
+import { QualityCheck, Issue } from '../data/types';
 
 export default function PerformanceTracking() {
-  const { orders, updateOrder } = useStore();
+  const navigate = useNavigate();
+  const { orders, contracts, updateOrder, addSettlement } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
+  const [showQualityModal, setShowQualityModal] = useState(false);
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const [qualityScores, setQualityScores] = useState({
+    appearanceScore: 85,
+    specScore: 85,
+    qualityScore: 85,
+    tasteScore: 85
+  });
+  const [qualityPassed, setQualityPassed] = useState(true);
+  const [qualityNotes, setQualityNotes] = useState('');
+  const [issueForm, setIssueForm] = useState({
+    type: '破损' as '破损' | '延迟' | '质量不符',
+    description: '',
+    amount: 0
+  });
 
   const statusIcons: Record<string, React.ReactNode> = {
     待发货: <Package className="w-5 h-5 text-gray-600" />,
@@ -26,8 +44,84 @@ export default function PerformanceTracking() {
     updateOrder(orderId, { status: newStatus as any });
   };
 
-  const handleReportIssue = (orderId: string) => {
-    alert(`为订单 ${orderId} 报告问题`);
+  const handleQualitySubmit = () => {
+    if (!selectedOrder) return;
+
+    const totalScore =
+      (qualityScores.appearanceScore +
+        qualityScores.specScore +
+        qualityScores.qualityScore +
+        qualityScores.tasteScore) / 4;
+
+    const qualityCheck: QualityCheck = {
+      id: `qc-${Date.now()}`,
+      appearanceScore: qualityScores.appearanceScore,
+      specScore: qualityScores.specScore,
+      qualityScore: qualityScores.qualityScore,
+      tasteScore: qualityScores.tasteScore,
+      totalScore,
+      passed: qualityPassed,
+      notes: qualityNotes,
+      checkedAt: new Date().toISOString().split('T')[0]
+    };
+
+    updateOrder(selectedOrder, {
+      status: '质检中',
+      qualityCheck
+    });
+
+    const order = orders.find(o => o.id === selectedOrder);
+    if (order && qualityPassed) {
+      handleUpdateStatus(selectedOrder, '质检中');
+    }
+
+    setShowQualityModal(false);
+  };
+
+  const handleIssueSubmit = () => {
+    if (!selectedOrder) return;
+
+    const order = orders.find(o => o.id === selectedOrder);
+    if (!order) return;
+
+    const newIssue: Issue = {
+      id: `issue-${Date.now()}`,
+      type: issueForm.type,
+      description: issueForm.description,
+      amount: issueForm.amount,
+      status: '待处理',
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+
+    const updatedIssues = [...order.issues, newIssue];
+    updateOrder(selectedOrder, { issues: updatedIssues });
+
+    if (issueForm.amount > 0) {
+      const contract = contracts.find(c => c.id === order.contractId);
+      if (contract) {
+        addSettlement({
+          id: `settle-${Date.now()}`,
+          contractId: order.contractId,
+          orderId: order.id,
+          supplierName: order.supplierName,
+          totalAmount: contract.totalAmount,
+          deductions: issueForm.type === '破损' || issueForm.type === '质量不符' ? issueForm.amount : 0,
+          replenishment: issueForm.type === '延迟' ? issueForm.amount : 0,
+          finalAmount: contract.totalAmount - (issueForm.type === '破损' || issueForm.type === '质量不符' ? issueForm.amount : 0) + (issueForm.type === '延迟' ? issueForm.amount : 0),
+          status: '待付款',
+          paidAt: ''
+        });
+      }
+    }
+
+    setShowIssueModal(false);
+    setIssueForm({
+      type: '破损',
+      description: '',
+      amount: 0
+    });
+
+    alert('异常已记录，相关结算信息已流转至结算复盘页面');
   };
 
   return (
@@ -101,6 +195,32 @@ export default function PerformanceTracking() {
                     </div>
                   </div>
 
+                  {order.qualityCheck && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">
+                          质检评分: {order.qualityCheck.totalScore.toFixed(1)}
+                        </span>
+                        <Badge variant={order.qualityCheck.passed ? 'success' : 'danger'} size="sm">
+                          {order.qualityCheck.passed ? '合格' : '不合格'}
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+
+                  {order.issues.length > 0 && (
+                    <div className="mb-4 p-3 bg-red-50 rounded-lg">
+                      <p className="text-sm font-medium text-red-700 mb-2">
+                        异常记录: {order.issues.length}条
+                      </p>
+                      {order.issues.map((issue) => (
+                        <div key={issue.id} className="text-sm text-red-600">
+                          {issue.type} - ¥{issue.amount}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="pt-4 border-t border-gray-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -112,12 +232,14 @@ export default function PerformanceTracking() {
                         <Button
                           size="sm"
                           variant="outline"
+                          icon={AlertTriangle}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleReportIssue(order.id);
+                            setSelectedOrder(order.id);
+                            setShowIssueModal(true);
                           }}
                         >
-                          报告问题
+                          异常处理
                         </Button>
                         {order.status === '待发货' && (
                           <Button
@@ -144,12 +266,27 @@ export default function PerformanceTracking() {
                         {order.status === '已到货' && (
                           <Button
                             size="sm"
+                            icon={CheckCircle}
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleUpdateStatus(order.id, '质检中');
+                              setSelectedOrder(order.id);
+                              setShowQualityModal(true);
                             }}
                           >
-                            开始质检
+                            质检登记
+                          </Button>
+                        )}
+                        {order.status === '质检中' && (
+                          <Button
+                            size="sm"
+                            variant="success"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpdateStatus(order.id, '已完成');
+                              navigate('/settlement');
+                            }}
+                          >
+                            完成质检
                           </Button>
                         )}
                       </div>
@@ -250,30 +387,45 @@ export default function PerformanceTracking() {
                       </div>
                     </div>
 
-                    <div className="bg-white rounded-lg p-4">
-                      <h4 className="text-sm font-medium text-gray-900 mb-3">
-                        异常记录
-                      </h4>
-                      {order.issues.length === 0 ? (
-                        <p className="text-sm text-gray-500 text-center py-4">
-                          暂无异常记录
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {order.issues.map((issue) => (
-                            <div
-                              key={issue.id}
-                              className="p-2 bg-red-50 rounded text-sm"
-                            >
-                              <p className="text-red-700">{issue.type}</p>
-                              <p className="text-red-600 text-xs mt-1">
-                                {issue.description}
-                              </p>
-                            </div>
-                          ))}
+                    {order.qualityCheck && (
+                      <div className="bg-white rounded-lg p-4">
+                        <h4 className="text-sm font-medium text-gray-900 mb-3">
+                          质检结果
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">外观</span>
+                            <span className="font-medium">
+                              {order.qualityCheck.appearanceScore}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">规格</span>
+                            <span className="font-medium">
+                              {order.qualityCheck.specScore}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">品质</span>
+                            <span className="font-medium">
+                              {order.qualityCheck.qualityScore}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">口感</span>
+                            <span className="font-medium">
+                              {order.qualityCheck.tasteScore}
+                            </span>
+                          </div>
+                          <div className="pt-2 border-t border-gray-200 flex justify-between font-medium">
+                            <span>综合评分</span>
+                            <span className="text-emerald-600">
+                              {order.qualityCheck.totalScore.toFixed(1)}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()
@@ -285,6 +437,180 @@ export default function PerformanceTracking() {
           </div>
         </div>
       </div>
+
+      {showQualityModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">质检登记</h2>
+
+            <div className="space-y-4">
+              {[
+                { key: 'appearanceScore', label: '外观评分' },
+                { key: 'specScore', label: '规格评分' },
+                { key: 'qualityScore', label: '品质评分' },
+                { key: 'tasteScore', label: '口感评分' }
+              ].map((item) => (
+                <div key={item.key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {item.label} (0-100)
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={qualityScores[item.key as keyof typeof qualityScores]}
+                    onChange={(e) =>
+                      setQualityScores({
+                        ...qualityScores,
+                        [item.key]: parseInt(e.target.value)
+                      })
+                    }
+                    className="w-full"
+                  />
+                  <div className="flex justify-between mt-1 text-sm">
+                    <span className="text-gray-500">0</span>
+                    <span className="font-bold text-emerald-600">
+                      {qualityScores[item.key as keyof typeof qualityScores]}
+                    </span>
+                    <span className="text-gray-500">100</span>
+                  </div>
+                </div>
+              ))}
+
+              <div className="bg-emerald-50 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="font-medium text-gray-900">综合评分</span>
+                  <span className="text-2xl font-bold text-emerald-600">
+                    {(
+                      (qualityScores.appearanceScore +
+                        qualityScores.specScore +
+                        qualityScores.qualityScore +
+                        qualityScores.tasteScore) /
+                      4
+                    ).toFixed(1)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  质检结论
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={qualityPassed}
+                      onChange={() => setQualityPassed(true)}
+                      className="w-4 h-4 text-emerald-600"
+                    />
+                    <span className="text-gray-700">合格</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={!qualityPassed}
+                      onChange={() => setQualityPassed(false)}
+                      className="w-4 h-4 text-red-600"
+                    />
+                    <span className="text-gray-700">不合格</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  备注
+                </label>
+                <textarea
+                  value={qualityNotes}
+                  onChange={(e) => setQualityNotes(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="输入质检备注..."
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <Button variant="secondary" onClick={() => setShowQualityModal(false)}>
+                取消
+              </Button>
+              <Button icon={Save} onClick={handleQualitySubmit}>
+                保存质检结果
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showIssueModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">异常处理</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  异常类型
+                </label>
+                <select
+                  value={issueForm.type}
+                  onChange={(e) => setIssueForm({ ...issueForm, type: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="破损">破损</option>
+                  <option value="延迟">延迟</option>
+                  <option value="质量不符">质量不符</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  异常描述
+                </label>
+                <textarea
+                  value={issueForm.description}
+                  onChange={(e) => setIssueForm({ ...issueForm, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="详细描述异常情况..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {issueForm.type === '延迟' ? '延迟赔偿金额' : '扣款金额'}（元）
+                </label>
+                <input
+                  type="number"
+                  value={issueForm.amount || ''}
+                  onChange={(e) => setIssueForm({ ...issueForm, amount: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="输入金额"
+                />
+              </div>
+
+              <div className="bg-orange-50 rounded-lg p-4 text-sm">
+                <p className="text-orange-800">
+                  {issueForm.type === '破损' && '破损问题将从结算金额中扣除相应款项'}
+                  {issueForm.type === '延迟' && '延迟交付将产生相应赔偿金额'}
+                  {issueForm.type === '质量不符' && '质量不符将产生扣款，可能需要补货'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <Button variant="secondary" onClick={() => setShowIssueModal(false)}>
+                取消
+              </Button>
+              <Button icon={Plus} onClick={handleIssueSubmit}>
+                记录异常
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

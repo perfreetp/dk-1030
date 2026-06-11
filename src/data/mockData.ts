@@ -14,6 +14,7 @@ export const mockBatches: ProcurementBatch[] = [
     deliveryLocation: '上海市浦东新区',
     qualityStandard: '直径≥5cm，无发芽，无腐烂',
     status: '竞价中',
+    invitedSuppliers: ['sup-001', 'sup-002', 'sup-004'],
     createdAt: '2024-03-01',
     updatedAt: '2024-03-15'
   },
@@ -30,6 +31,7 @@ export const mockBatches: ProcurementBatch[] = [
     deliveryLocation: '北京市朝阳区',
     qualityStandard: '直径≥6cm，出口级品质',
     status: '招标中',
+    invitedSuppliers: ['sup-001'],
     createdAt: '2024-03-10',
     updatedAt: '2024-03-15'
   },
@@ -46,6 +48,7 @@ export const mockBatches: ProcurementBatch[] = [
     deliveryLocation: '广州市天河区',
     qualityStandard: '直径≥4cm，用于加工',
     status: '已完成',
+    invitedSuppliers: ['sup-001', 'sup-002'],
     createdAt: '2024-02-20',
     updatedAt: '2024-03-01'
   },
@@ -62,6 +65,7 @@ export const mockBatches: ProcurementBatch[] = [
     deliveryLocation: '深圳市南山区',
     qualityStandard: '直径≥5cm，干燥度≥95%',
     status: '草稿',
+    invitedSuppliers: [],
     createdAt: '2024-03-15',
     updatedAt: '2024-03-15'
   }

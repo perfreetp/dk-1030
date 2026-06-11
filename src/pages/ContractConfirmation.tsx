@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { FileCheck, Search, Clock, CheckCircle, Download, Send } from 'lucide-react';
+import { FileCheck, Search, Clock, CheckCircle, Download, Send, AlertCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
 
 export default function ContractConfirmation() {
-  const { contracts } = useStore();
+  const { contracts, updateContract } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('全部');
   const [selectedContract, setSelectedContract] = useState<string | null>(null);
@@ -27,11 +27,72 @@ export default function ContractConfirmation() {
   };
 
   const handleSign = (contractId: string) => {
-    alert(`合同 ${contractId} 已签署`);
+    if (window.confirm('确认签署此合同？签署后将无法撤回。')) {
+      updateContract(contractId, {
+        status: '已签署',
+        signedAt: new Date().toISOString().split('T')[0]
+      });
+    }
   };
 
   const handleDownload = (contractId: string) => {
-    alert(`下载合同 ${contractId}`);
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return;
+
+    const content = `
+大蒜采购合同
+================================================================================
+
+合同编号: ${contract.contractNumber}
+签订日期: ${contract.createdAt}
+签署日期: ${contract.signedAt || '待签署'}
+
+--------------------------------------------------------------------------------
+甲方（采购方）:
+  公司名称: 大蒜采购竞价平台
+  地址: 上海市浦东新区
+
+乙方（供应方）:
+  公司名称: ${contract.supplierName}
+
+--------------------------------------------------------------------------------
+合同标的:
+  采购批次: ${contract.batchName}
+  合同金额: ¥${contract.totalAmount.toLocaleString()}
+  交付日期: ${contract.deliveryDate}
+  付款方式: ${contract.paymentTerms}
+
+--------------------------------------------------------------------------------
+质量标准:
+  符合国家相关食品质量安全标准
+  直径≥5cm，无发芽，无腐烂
+
+--------------------------------------------------------------------------------
+违约责任:
+  1. 甲方逾期付款，应按日支付合同金额的0.5%作为违约金
+  2. 乙方逾期交货，应按日支付合同金额的0.5%作为违约金
+  3. 质量不符合标准的，乙方应无条件退货并承担相应费用
+
+--------------------------------------------------------------------------------
+争议解决:
+  本合同在履行过程中发生的争议，双方应协商解决；协商不成的，提交合同
+  签订地有管辖权的人民法院诉讼解决。
+
+--------------------------------------------------------------------------------
+合同状态: ${contract.status}
+
+================================================================================
+`;
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `合同_${contract.contractNumber}_${contract.supplierName}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -259,7 +320,7 @@ export default function ContractConfirmation() {
                                 </>
                               ) : (
                                 <>
-                                  <Clock className="w-4 h-4" />
+                                  <AlertCircle className="w-4 h-4" />
                                   <span className="text-sm">待签署</span>
                                 </>
                               )}
@@ -272,13 +333,24 @@ export default function ContractConfirmation() {
                         <div className="pt-4 border-t border-gray-200">
                           <Button
                             className="w-full"
-                            icon={Send}
+                            icon={CheckCircle}
                             onClick={() => handleSign(contract.id)}
                           >
-                            发送签署链接
+                            确认签署
                           </Button>
                         </div>
                       )}
+
+                      <div className="pt-4 border-t border-gray-200">
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          icon={Download}
+                          onClick={() => handleDownload(contract.id)}
+                        >
+                          下载合同文件
+                        </Button>
+                      </div>
                     </div>
                   );
                 })()

@@ -1,12 +1,23 @@
 import { useState } from 'react';
-import { Search, TrendingDown, Trophy, Clock, DollarSign } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, TrendingDown, Trophy, Clock, DollarSign, Plus, CheckCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import Badge from '../components/common/Badge';
+import Button from '../components/common/Button';
+import { Quotation } from '../data/types';
 
 export default function QuotationComparison() {
-  const { batches, quotations } = useStore();
+  const navigate = useNavigate();
+  const { batches, suppliers, quotations, addQuotation, addContract, updateBatch } = useStore();
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [roundFilter, setRoundFilter] = useState<number | 'all'>('all');
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [quoteForm, setQuoteForm] = useState({
+    supplierId: '',
+    unitPrice: 0,
+    freight: 0
+  });
 
   const activeBatches = batches.filter(
     (b) => b.status === '竞价中' || b.status === '招标中'
@@ -26,15 +37,85 @@ export default function QuotationComparison() {
   );
 
   const lowestPrice = sortedQuotations.length > 0 ? sortedQuotations[0] : null;
+  const currentRound = batchQuotations.length > 0 
+    ? Math.max(...batchQuotations.map(q => q.round)) 
+    : 0;
+
+  const invitedSupplierIds = selectedBatchId 
+    ? batches.find(b => b.id === selectedBatchId)?.invitedSuppliers || []
+    : [];
+  const invitedSuppliers = suppliers.filter(s => invitedSupplierIds.includes(s.id));
 
   const handleStartNewRound = () => {
-    alert('开始新一轮竞价');
+    if (!selectedBatchId) {
+      alert('请先选择一个招标批次');
+      return;
+    }
+    setQuoteForm({ supplierId: '', unitPrice: 0, freight: 0 });
+    setShowQuoteModal(true);
+  };
+
+  const handleAddQuote = () => {
+    if (!quoteForm.supplierId || !quoteForm.unitPrice) {
+      alert('请填写完整的报价信息');
+      return;
+    }
+
+    const supplier = suppliers.find(s => s.id === quoteForm.supplierId);
+    if (!supplier) return;
+
+    const newQuotation: Quotation = {
+      id: `quote-${Date.now()}`,
+      batchId: selectedBatchId,
+      supplierId: quoteForm.supplierId,
+      supplierName: supplier.companyName,
+      unitPrice: quoteForm.unitPrice,
+      freight: quoteForm.freight,
+      totalPrice: quoteForm.unitPrice * 50 + quoteForm.freight,
+      minOrder: 10,
+      validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      round: currentRound + 1,
+      submittedAt: new Date().toLocaleString('zh-CN')
+    };
+
+    addQuotation(newQuotation);
+    updateBatch(selectedBatchId, { status: '竞价中' });
+    setShowQuoteModal(false);
   };
 
   const handleConfirmWinner = () => {
     if (lowestPrice) {
-      alert(`确认 ${lowestPrice.supplierName} 为中标方`);
+      setShowConfirmModal(true);
     }
+  };
+
+  const handleGenerateContract = () => {
+    if (!lowestPrice) return;
+
+    const batch = batches.find(b => b.id === selectedBatchId);
+    if (!batch) return;
+
+    const newContract = {
+      id: `contract-${Date.now()}`,
+      contractNumber: `CT-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+      batchId: selectedBatchId,
+      batchName: batch.name,
+      supplierId: lowestPrice.supplierId,
+      supplierName: lowestPrice.supplierName,
+      totalAmount: lowestPrice.totalPrice,
+      deliveryDate: batch.deliveryDate,
+      paymentTerms: '预付30%，到货付70%',
+      status: '待确认' as const,
+      createdAt: new Date().toISOString().split('T')[0],
+      signedAt: ''
+    };
+
+    addContract(newContract);
+    updateBatch(selectedBatchId, { status: '已截止' });
+    
+    setShowConfirmModal(false);
+    alert(`已为 ${lowestPrice.supplierName} 生成待确认合同！`);
+    navigate('/contract');
   };
 
   return (
@@ -46,14 +127,11 @@ export default function QuotationComparison() {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="info">
-            当前轮次: 第{selectedBatchId ? Math.max(...batchQuotations.map(q => q.round), 1) : 1}轮
+            当前轮次: 第{currentRound + 1}轮
           </Badge>
-          <button
-            onClick={handleStartNewRound}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-          >
-            开始新轮次
-          </button>
+          <Button icon={Plus} onClick={handleStartNewRound}>
+            新增报价
+          </Button>
         </div>
       </div>
 
@@ -113,7 +191,7 @@ export default function QuotationComparison() {
                         : 'hover:bg-gray-50'
                     }`}
                   >
-                    第 {round} 轮报价
+                    第 {round} 轮报价 ({batchQuotations.filter(q => q.round === round).length}条)
                   </button>
                 ))}
               </div>
@@ -248,6 +326,9 @@ export default function QuotationComparison() {
                     <div className="text-center py-12">
                       <TrendingDown className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">暂无报价数据</p>
+                      <Button className="mt-4" onClick={handleStartNewRound}>
+                        添加第一轮报价
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -299,12 +380,9 @@ export default function QuotationComparison() {
                     <button className="px-6 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                       导出比价报告
                     </button>
-                    <button
-                      onClick={handleConfirmWinner}
-                      className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                    >
+                    <Button icon={CheckCircle} onClick={handleConfirmWinner}>
                       确认中标方
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -322,6 +400,135 @@ export default function QuotationComparison() {
           )}
         </div>
       </div>
+
+      {showQuoteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              新增第{currentRound + 1}轮报价
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  选择供应商
+                </label>
+                <select
+                  value={quoteForm.supplierId}
+                  onChange={(e) => setQuoteForm({ ...quoteForm, supplierId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">请选择供应商</option>
+                  {invitedSuppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.companyName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  含税单价（元/吨）
+                </label>
+                <input
+                  type="number"
+                  value={quoteForm.unitPrice || ''}
+                  onChange={(e) => setQuoteForm({ ...quoteForm, unitPrice: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="例如：7500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  运费（元）
+                </label>
+                <input
+                  type="number"
+                  value={quoteForm.freight || ''}
+                  onChange={(e) => setQuoteForm({ ...quoteForm, freight: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="例如：2000"
+                />
+              </div>
+
+              {quoteForm.unitPrice > 0 && (
+                <div className="bg-emerald-50 rounded-lg p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700">含税含运总价（50吨）:</span>
+                    <span className="text-2xl font-bold text-emerald-600">
+                      ¥{(quoteForm.unitPrice * 50 + quoteForm.freight).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <Button variant="secondary" onClick={() => setShowQuoteModal(false)}>
+                取消
+              </Button>
+              <Button onClick={handleAddQuote}>
+                提交报价
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmModal && lowestPrice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              确认中标方
+            </h2>
+
+            <div className="bg-emerald-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <Trophy className="w-8 h-8 text-emerald-600" />
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    {lowestPrice.supplierName}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    第{lowestPrice.round}轮报价
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-600">含税单价:</span>
+                  <span className="ml-2 font-medium">¥{lowestPrice.unitPrice}/吨</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">运费:</span>
+                  <span className="ml-2 font-medium">¥{lowestPrice.freight}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-600">含税含运总价:</span>
+                  <span className="ml-2 font-bold text-emerald-600">
+                    ¥{lowestPrice.totalPrice.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              确认后将为此供应商生成待确认合同，并结束本次竞价。
+            </p>
+
+            <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>
+                取消
+              </Button>
+              <Button onClick={handleGenerateContract}>
+                确认并生成合同
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
